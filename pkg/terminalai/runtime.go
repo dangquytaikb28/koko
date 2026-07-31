@@ -728,6 +728,7 @@ func (r *Runtime) authorize(
 	aclReview := r.aclReview
 	r.mu.Unlock()
 	forceApproval := false
+	requiresACLReview := false
 	var aclDecision CommandACLDecision
 	if aclCheck != nil {
 		aclDecision = aclCheck(proposal.Command)
@@ -741,29 +742,11 @@ func (r *Runtime) authorize(
 				proposal.RiskLevel, proposal.RiskReason, 3,
 				"command requires approval by the existing command ACL",
 			)
-			r.emitData("data-command-acl", map[string]any{
-				"state": "waiting_for_review", "command": proposal.Command,
-				"decision": aclDecision,
-			}, "process")
 			if aclReview == nil {
 				return CommandProposal{}, fmt.Errorf("command ACL review is unavailable")
 			}
-			reviewed, err := aclReview(ctx, aclDecision, proposal.Command)
-			if err != nil {
-				return CommandProposal{}, err
-			}
-			aclDecision = reviewed
-			state := "approved"
-			if reviewed.Action != "accept" {
-				state = "rejected"
-			}
-			r.emitData("data-command-acl", map[string]any{
-				"state": state, "command": proposal.Command,
-				"decision": reviewed,
-			}, "process")
-			if reviewed.Action != "accept" {
-				return CommandProposal{}, fmt.Errorf("command rejected by ACL reviewer")
-			}
+			forceApproval = true
+			requiresACLReview = true
 		case "notify_and_warn":
 			proposal.RiskLevel, proposal.RiskReason = raiseRisk(
 				proposal.RiskLevel, proposal.RiskReason, 3,
@@ -800,7 +783,9 @@ func (r *Runtime) authorize(
 		data["state"] = "auto_approved"
 		r.emitData("data-command", data, "process")
 		r.writeAudit("command_auto_approved", data)
-		return proposal, nil
+		return r.completeCommandACLReview(
+			ctx, proposal, aclDecision, aclReview, requiresACLReview,
+		)
 	}
 	data["approvalRequired"] = true
 	data["state"] = "awaiting_risk_approval"
@@ -836,8 +821,46 @@ func (r *Runtime) authorize(
 		r.writeAudit("command_approved", map[string]any{
 			"id": id, "digest": digest, "execution": pending.proposal.Execution,
 		})
-		return pending.proposal, nil
+		return r.completeCommandACLReview(
+			ctx, pending.proposal, aclDecision, aclReview, requiresACLReview,
+		)
 	}
+}
+
+func (r *Runtime) completeCommandACLReview(
+	ctx context.Context,
+	proposal CommandProposal,
+	decision CommandACLDecision,
+	review func(context.Context, CommandACLDecision, string) (CommandACLDecision, error),
+	required bool,
+) (CommandProposal, error) {
+	if !required {
+		return proposal, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return CommandProposal{}, err
+	}
+	r.emitData("data-command-acl", map[string]any{
+		"state": "waiting_for_review", "command": proposal.Command,
+		"decision": decision,
+	}, "process")
+	reviewed, err := review(ctx, decision, proposal.Command)
+	if err != nil {
+		return CommandProposal{}, err
+	}
+	state := "approved"
+	if reviewed.Action != "accept" {
+		state = "rejected"
+	}
+	r.emitData("data-command-acl", map[string]any{
+		"state": state, "command": proposal.Command,
+		"decision": reviewed,
+	}, "process")
+	if reviewed.Action != "accept" {
+		return CommandProposal{}, fmt.Errorf("command rejected by ACL reviewer")
+	}
+	proposal.CommandACL = &reviewed
+	return proposal, nil
 }
 
 func requiresRiskApproval(
