@@ -276,7 +276,6 @@ func (userCon *UserWebsocket) readMessageLoop() error {
 			}
 			switch msg.Type {
 			case PING, PONG:
-				logger.Debugf("Ws[%s] receive %s message", userCon.Uuid, msg.Type)
 			case TerminalK8STree:
 				if userCon.k8sClient == nil {
 					userCon.SendMessage(&Message{

@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
-import { useRoute } from 'vue-router';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { Bot, FolderKanban, Keyboard as KeyboardIcon, PanelRightOpen, Share2, X } from 'lucide-vue-next';
+import { Bot, FolderKanban, Keyboard as KeyboardIcon, Share2, X } from 'lucide-vue-next';
 
 import type { LunaMessage } from '@/types/modules/postmessage.type';
 
@@ -25,10 +24,8 @@ const props = defineProps<{
 const MAX_WAIT_TIME = 1000 * 15;
 
 const { t } = useI18n();
-const route = useRoute();
 const connectionStore = useConnectionStore();
 const { resetShareState } = useSessionAdapter();
-const developmentToken = route.query.token === 'dev' ? 'dev' : '';
 
 const drawerTabs = [
   {
@@ -57,11 +54,11 @@ const drawerTabs = [
   },
 ];
 
-const hasToken = ref(Boolean(developmentToken));
+const hasToken = ref(false);
 const showEmpty = ref(false);
-const drawerStatus = ref(Boolean(developmentToken));
+const drawerStatus = ref(false);
 const isRequestingToken = ref(false);
-const fileManagerToken = ref(developmentToken);
+const fileManagerToken = ref('');
 const timeoutId = ref<number | null>(null);
 const isDisableFileManager = ref(false);
 
@@ -139,14 +136,6 @@ const handleReconnect = () => {
     timeoutId.value = null;
   }
 
-  if (developmentToken) {
-    hasToken.value = true;
-    showEmpty.value = false;
-    isRequestingToken.value = false;
-    fileManagerToken.value = developmentToken;
-    return;
-  }
-
   hasToken.value = false;
   showEmpty.value = false;
   fileManagerToken.value = '';
@@ -207,18 +196,6 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <n-button
-    v-if="developmentToken && !drawerStatus"
-    circle
-    quaternary
-    class="fixed right-4 top-4 z-50"
-    @click="handleOpenDrawer"
-  >
-    <template #icon>
-      <PanelRightOpen :size="18" />
-    </template>
-  </n-button>
-
   <n-drawer
     id="drawer-inner-target"
     resizable

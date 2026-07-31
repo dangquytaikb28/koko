@@ -135,9 +135,7 @@ func (p *Parser) initial(w, h int) error {
 		Terminal:     terminal,
 		width:        uint16(w),
 		height:       uint16(h),
-		counted:      true,
 	}
-	activeTerminalParsers.Add(1)
 	p.closed = make(chan struct{})
 	p.cmdRecordChan = make(chan *ExecutedCommand, 1024)
 	p.disableInputAsCmd = config.GetConf().DisableInputAsCommand
@@ -537,9 +535,6 @@ func (p *Parser) updateTerminalMode(b []byte) {
 	p.modeLock.Lock()
 	defer p.modeLock.Unlock()
 	if !alternate {
-		if p.isEditMode || p.inVimState || p.isScreenMode {
-			logger.Debugf("Session %s exit alternate screen mode", p.id)
-		}
 		p.isEditMode = false
 		p.inVimState = false
 		p.isScreenMode = false
@@ -551,18 +546,15 @@ func (p *Parser) updateTerminalMode(b []byte) {
 		// Exiting an editor nested inside tmux restores the tmux alternate
 		// screen, so alternate may remain true here.
 		p.inVimState = false
-		logger.Debugf("Session %s exit editor mode", p.id)
 		return
 	}
 	if IsEditEnterMode(b) && isTerminalEditorCommand(p.command) {
 		p.inVimState = true
-		logger.Debugf("Session %s enter editor mode", p.id)
 		return
 	}
 	if isTerminalMultiplexerCommand(p.command) || isNewScreen(b) {
 		p.isScreenMode = true
 		p.inVimState = false
-		logger.Debugf("Session %s enter terminal multiplexer mode", p.id)
 		return
 	}
 	if !p.isScreenMode && !p.inVimState && matchMark(b, vimMarks) {
@@ -570,7 +562,6 @@ func (p *Parser) updateTerminalMode(b []byte) {
 		// hide the executable name. It is only evaluated after VT confirms that
 		// the alternate screen is active.
 		p.inVimState = true
-		logger.Debugf("Session %s enter full-screen application mode", p.id)
 	}
 }
 

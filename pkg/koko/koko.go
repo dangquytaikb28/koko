@@ -2,7 +2,6 @@ package koko
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"os/signal"
@@ -10,12 +9,10 @@ import (
 	"time"
 
 	"github.com/jumpserver/koko/pkg/config"
-	"github.com/jumpserver/koko/pkg/devcore"
 	"github.com/jumpserver/koko/pkg/exchange"
 	"github.com/jumpserver/koko/pkg/httpd"
 	"github.com/jumpserver/koko/pkg/i18n"
 	"github.com/jumpserver/koko/pkg/logger"
-	"github.com/jumpserver/koko/pkg/monitoring"
 	"github.com/jumpserver/koko/pkg/sshd"
 	"github.com/jumpserver/koko/pkg/terminalai"
 
@@ -30,15 +27,11 @@ type Koko struct {
 
 func (k *Koko) Start() {
 	go k.webSrv.Start()
-	if k.sshSrv != nil {
-		go k.sshSrv.Start()
-	}
+	go k.sshSrv.Start()
 }
 
 func (k *Koko) Stop() {
-	if k.sshSrv != nil {
-		k.sshSrv.Stop()
-	}
+	k.sshSrv.Stop()
 	k.webSrv.Stop()
 	logger.Info("Quit The KoKo")
 }
@@ -67,59 +60,18 @@ func RunForever(confPath string) {
 			aiResult.RuleCount,
 		)
 	}
-	var developmentCore *devcore.Server
-	if config.GlobalConfig.DevMode {
-		devConfig, err := devcore.LoadConfig()
-		if err != nil {
-			logger.Fatal("Load development core config failed: " + err.Error())
-		}
-		config.GlobalConfig.BindHost = "127.0.0.1"
-		developmentCore, err = devcore.Start(devConfig)
-		if err != nil {
-			logger.Fatal(err.Error())
-		}
-		config.GlobalConfig.CoreHost = developmentCore.URL()
-		logger.Warnf("Development mode enabled; Koko and development Core are bound to localhost only")
-		logger.Infof("Development terminal URL: http://127.0.0.1:9530/koko/connect/?token=%s",
-			devcore.TokenID)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err = developmentCore.Close(ctx); err != nil {
-				logger.Errorf("Stop development core failed: %s", err)
-			}
-		}()
-	}
 	jmsService := MustJMService()
 	gracefulStop := make(chan os.Signal, 1)
 	signal.Notify(gracefulStop, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
-	memoryDump := make(chan os.Signal, 1)
-	signal.Notify(memoryDump, syscall.SIGUSR1)
-	defer signal.Stop(memoryDump)
-	go func() {
-		for range memoryDump {
-			payload, err := json.Marshal(monitoring.Snapshot())
-			if err != nil {
-				logger.Errorf("Marshal memory snapshot failed: %s", err)
-				continue
-			}
-			logger.Infof("Memory snapshot: %s", payload)
-		}
-	}()
 	bootstrapWithJMService(jmsService)
 	webSrv := httpd.NewServer(jmsService)
-	var sshSrv *sshd.Server
-	if !config.GlobalConfig.DevMode {
-		sshSrv = sshd.NewSSHServer(jmsService)
-	}
+	sshSrv := sshd.NewSSHServer(jmsService)
 	app := &Koko{
 		webSrv: webSrv,
 		sshSrv: sshSrv,
 	}
 	app.Start()
-	if !config.GlobalConfig.DevMode {
-		runTasks(jmsService)
-	}
+	runTasks(jmsService)
 	<-gracefulStop
 	app.Stop()
 }
@@ -165,10 +117,7 @@ func runTasks(jmsService *service.JMService) {
 }
 
 func MustJMService() *service.JMService {
-	key := model.AccessKey{ID: devcore.AccessKeyID, Secret: devcore.AccessKeySecret}
-	if !config.GlobalConfig.DevMode {
-		key = MustLoadValidAccessKey()
-	}
+	key := MustLoadValidAccessKey()
 	jmsService, err := service.NewAuthJMService(
 		service.JMSCoreHost(config.GlobalConfig.CoreHost),
 		service.JMSTimeOut(time.Duration(config.GlobalConfig.HttpRequestTimeout)*time.Second),

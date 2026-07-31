@@ -117,10 +117,6 @@ clean:
 run:
 	go run ./cmd/koko/
 
-.PHONY: run-dev
-run-dev:
-	DEV_MODE=true go run ./cmd/koko/
-
 .PHONY: run-ui
 run-ui:
 	cd $(UIDIR) && yarn run serve
