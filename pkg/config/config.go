@@ -112,7 +112,7 @@ func Setup(configPath string) {
 	loadConfigFromFile(configPath, &conf)
 	conf.EnsureConfigValid()
 	GlobalConfig = &conf
-	log.Printf("%+v\n", GlobalConfig)
+	log.Printf("Configuration loaded (name=%s, ssh_port=%s, http_port=%s)", conf.Name, conf.SSHPort, conf.HTTPPort)
 }
 
 func getDefaultConfig() Config {
